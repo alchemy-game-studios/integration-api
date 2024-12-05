@@ -11,54 +11,97 @@ export class GithubConnectorPullRequests {
   constructor(private readonly githubConnector: GithubConnector) {}
 
   readonly pullRequestPath: string = 'pulls';
-  readonly resultsPerPage: number = 100;
+  readonly defaultPullRequestState: string = 'all';
+  readonly useCache: boolean = true;
+
+  // Simple cache. Use external service like Redis with eviction strategy.
+  cacheRecords: any = [];
 
   /*
    * Concurrent calls are not recommended by Github, but we can call pages with delay to avoid waiting.
-   *
-   * We assume number of pages will not get overly large for the timeout function queue. If this assumption isn't correct,
-   * we can add a call queue and only have X calls running at a time.
    */
   async getPullRequestCountConcurrent(githubMetadataDto: GithubMetadataDTO): Promise<GithubResultDTO> {
     const url: string = this.githubConnector.fullPath(githubMetadataDto, this.pullRequestPath);
-    const startPage: number = 1;
+    let finalResults: GithubResultDTO;
+    let count = 0;
+    const cacheRecord = this.getCacheRecord(githubMetadataDto);
 
-    // Store all page results here
+    let startPage: number = 1;
+
+    const baseParams: any = {
+      state: this.defaultPullRequestState,
+    };
+
+    // Store all page results here.
     let callResults: any[] = [];
 
-    // Get first page to determine full number of pages
-    const resultContainer: GithubResultDTO = await this.getPage(url, startPage);
-    callResults.push(resultContainer);
+    // Update cursor if we have a cached version to minimize calls
+    if (this.useCache && cacheRecord?.lastPage > 0) {
+      startPage = cacheRecord.lastPage;
+      // Reset count to not include the last page to ensure we update the count correctly later.
+      count = cacheRecord.recordCount - cacheRecord.numRecordsInPage;
+    }
+
+    // Get first API result to get current state information
+    let firstResults: GithubResultDTO = await this.githubConnector.getPage(url, startPage, baseParams);
+
+    // If cache is current, return cached results
+    if (this.useCache && cacheRecord) {
+       // Link rels are not always present, so check multiple places to get the number of pages
+      const numPages = firstResults.links.last
+      ? parseInt(firstResults.links.last.page)
+      : parseInt(firstResults.links.prev.page) + 1;
+
+      if (this.cacheCheck(firstResults, numPages, cacheRecord)) {
+        console.log('Cached result was returned.');
+        finalResults = new GithubResultDTO();
+        finalResults.count = cacheRecord?.recordCount;
+
+        return finalResults;
+
+      // If there are less pages in current state vs the cache, 
+      // we need to reset cursor and pull the first page because some pages were deleted since last time.
+      } else if (cacheRecord.lastPage > numPages) {
+        startPage = 1;
+        firstResults = await this.githubConnector.getPage(url, startPage, baseParams);
+      }
+    }
 
     // We can get all the remaining pages in a controlled async way.
+    callResults.push(firstResults);
+    
     const startConcurrentPage: number = startPage + 1;
-    const lastPage: number = parseInt(resultContainer?.links?.last?.page);
+    const lastPage: number = parseInt(firstResults?.links?.last?.page);
 
     if (!isNaN(lastPage) && lastPage !== startPage) {
-      const concurrentResults = await this.getPages(url, startConcurrentPage, lastPage);
+      const concurrentResults = await this.githubConnector.getPages(url, startConcurrentPage, lastPage, baseParams);
       callResults = callResults.concat(concurrentResults);
     }
 
-    return this.getGithubCountResult(callResults);
-  }
+    finalResults = this.getGithubCountResult(callResults);
+    finalResults.count += count;
 
+    if (this.useCache) {
+      this.updateCache(githubMetadataDto, callResults, finalResults.count);
+    }
+
+    return finalResults;
+  }
 
   /*
    * We can derive the count of Pull Requests by looking at the `links.last` result from Github, with 1 item
    * per page, and `links.last.page` is the count we're looking for.
    */
   async getPullRequestCountFromMetadata(githubMetadataDto: GithubMetadataDTO): Promise<GithubResultDTO> {
+    const url: string = this.githubConnector.fullPath(githubMetadataDto, this.pullRequestPath);
+
     const pullRequestParams: any = {
-      state: 'all',
+      state: this.defaultPullRequestState,
       per_page: 1,
       page: 1,
     };
 
-    const pageResult = await this.githubConnector.getGithubResultsFromUrl(
-      this.githubConnector.fullPath(githubMetadataDto, this.pullRequestPath),
-      pullRequestParams
-    );
-
+    const pageResult = await this.githubConnector.getGithubResultsFromUrl(url, pullRequestParams);
     const countResult = new GithubResultDTO();
     countResult.count = parseInt(pageResult.links?.last?.page);
 
@@ -74,9 +117,10 @@ export class GithubConnectorPullRequests {
    * But we do get the result in one call.
    */
   async getPullRequestCountFromSearch(githubMetadataDto: GithubMetadataDTO): Promise<GithubResultDTO> {
+    const pullRequestSearchQuery = `?q=repo:${githubMetadataDto.owner}/${githubMetadataDto.repo}+is:pull-request`;
+
     const searchResult = await this.githubConnector.getGithubResultsFromUrl(
-      this.githubConnector.searchPath('issues') +
-        `?q=repo:${githubMetadataDto.owner}/${githubMetadataDto.repo}+is:pull-request`
+      this.githubConnector.searchPath('issues') + pullRequestSearchQuery
     );
 
     const countResult = new GithubResultDTO();
@@ -86,28 +130,53 @@ export class GithubConnectorPullRequests {
   }
 
   /*
-   * Gets a single page of results.
-   */
-  async getPage(url: string, pageNumber: number): Promise<GithubResultDTO> {
-    const pullRequestParams: any = {
-      state: 'all',
-      per_page: this.resultsPerPage,
-      page: pageNumber,
-    };
-
-    return await this.githubConnector.getGithubResultsFromUrl(url, pullRequestParams);
+  * Check if we have a cache value that is current.
+  */
+  cacheCheck(firstResults: GithubResultDTO, numPages: number, cacheRecord: any): boolean {
+    return this.useCache &&
+    numPages == cacheRecord.lastPage &&
+    firstResults.result.data.length == cacheRecord.numRecordsInPage;
   }
 
   /*
-   * Gets multiple pages of results.
-   */
-  async getPages(url: string, startPage: number, endPage: number): Promise<any> {
-    // Make the rest of the calls and wait for all of them to return
-    const params = {
-      state: 'all',
-      per_page: this.resultsPerPage,
-    };
-    return await Promise.all(this.githubConnector.callConcurrent(url, startPage, endPage, params));
+  * Update the cache values for the given Github metadata, or lazy-load if it is new. 
+  */
+  updateCache(githubMetadataDto: GithubMetadataDTO, finalResults: GithubResultDTO[], count: number) {
+    // Record without a last link it the last page
+    const lastPageReference = finalResults.find((x) => x.links.last);
+    let cacheRecord = this.getCacheRecord(githubMetadataDto);
+
+    if (!cacheRecord) {
+      cacheRecord = {
+        owner: githubMetadataDto.owner,
+        repo: githubMetadataDto.repo,
+        lastPage: -1,
+        numRecordsInPage: -1,
+        recordCount: -1,
+      };
+
+      this.cacheRecords.push(cacheRecord);
+    }
+
+    if (lastPageReference) {
+      const prevPageNumber: number = parseInt(lastPageReference.links.last.page);
+
+      if (!isNaN(prevPageNumber)) {
+        cacheRecord.lastPage = prevPageNumber;
+      }
+
+      const lastPage = finalResults.find((x) => !x.links.last || x.links.last.pageNumber == x.links.last.page);
+
+      cacheRecord.numRecordsInPage = lastPage.result.data.length;
+      cacheRecord.recordCount = count;
+    }
+  }
+
+  /*
+  * Return the cache record for the associated Github metadata
+  */
+  getCacheRecord(githubMetadataDto: GithubMetadataDTO) {
+    return this.cacheRecords.find((x) => x.owner == githubMetadataDto.owner && x.repo == githubMetadataDto.repo);
   }
 
   /*

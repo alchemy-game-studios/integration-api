@@ -12,11 +12,13 @@ export class ExampleFactory {
       const links = [
         {
           perPage: numPerPage,
+          pageNumber: i,
           page: i + 1,
           rel: 'next',
         },
         {
           perPage: numPerPage,
+          pageNumber: numPages,
           page: numPages,
           rel: 'last',
         },
@@ -33,10 +35,12 @@ export class ExampleFactory {
       {
         perPage: 1,
         page: 1,
+        pageNumber: 1,
         rel: 'next',
       },
       {
         perPage: 1,
+        pageNumber: 1,
         page: numPullRequests,
         rel: 'last',
       },
@@ -53,12 +57,29 @@ export class ExampleFactory {
     };
   }
 
-  githubPaginatedResult(status: number, numDataPerPage: number, links: any[] = [], headers: any = {}) {
+  githubPaginatedResult(status: number, numDataPerPage: number, links: any[] = null, headers: any = {}) {
     const example: any = {
       status: status,
       headers: headers,
       data: [],
     };
+
+    if (!links) {
+      links = [
+        {
+          perPage: 1,
+          page: 1,
+          pageNumber: 1,
+          rel: 'next',
+        },
+        {
+          perPage: 1,
+          pageNumber: 1,
+          page: 1,
+          rel: 'last',
+        },
+      ];
+    }
 
     // Set up data
     for (let i = 0; i < numDataPerPage; i++) {
@@ -87,7 +108,7 @@ export class ExampleFactory {
   }
 
   paginatedLinkExample(perPage: number, page: number, rel: string = 'next') {
-    return `<https://api.github.com/repositories/3955647/pulls?state=all&per_page=${perPage}&page=${page}>; rel="${rel}"`;
+    return `<https://api.github.com/repositories/3955647/pulls?state=all&per_page=${perPage}&page=${page}&pageNumber=${page}>; rel="${rel}"`;
   }
 
   dataExample() {

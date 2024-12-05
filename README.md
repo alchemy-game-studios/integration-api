@@ -59,11 +59,13 @@ curl -X GET "http://localhost:3000/github/pull-requests/count/search?owner=lodas
 - Simple NestJS implementation with dependency injection.
 - Basic input validation.
 - Multiple methods for retreiving the count from Github. See `github.connector.ts` for more information and implementations.
+  - A concurrent method with a cursor that uses the paging metadata to call all page endpoints needed to get the count.
   - A slightly cheating method by deriving the value from the Github paging metadata after a single call.
   - Using the Github search API.
-  - A semi-concurrent method that uses the paging metadata to call all page endpoints needed to get the count.
 - Github API rate limit handling.
+- Cached results & cursor handling for efficient repeated requests.
 - Basic error handling.
+- Some testing for the main Pull Request integration logic.
 - Dockerized environment.
 - `npm run` helpers for local development and deployment.
 

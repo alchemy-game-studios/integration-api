@@ -14,16 +14,37 @@ const parse = require('parse-link-header');
 @Injectable()
 export class GithubConnector {
   readonly basePath: string = 'https://api.github.com';
- 
+
   readonly badGitHubResultException = new UnprocessableEntityException('Github api returned invalid result.');
   readonly tooManyRetriesException = new NotAcceptableException('Exceeded too many retries for Github rate limit.');
 
+  readonly resultsPerPage: number = 100;
   readonly retryLimit: number = 5;
   readonly githubRateLimitResponses: number[] = [403, 429];
- 
+
   // 1 second recommended by Github to avoid rate limit.
   // Practically we can have no delay for this use case and rely on rate limit handling.
   readonly secondsBetweenRequests: number = 0;
+
+  /*
+   * Gets a single page of results.
+   */
+  async getPage(url: string, pageNumber: number, params: any): Promise<GithubResultDTO> {
+    params.page = pageNumber;
+    params.per_page = this.resultsPerPage;
+
+    return await this.getGithubResultsFromUrl(url, params);
+  }
+
+  /*
+   * Gets multiple pages of results.
+   */
+  async getPages(url: string, startPage: number, endPage: number, params: any): Promise<any> {
+    // Make the rest of the calls and wait for all of them to return
+    params.per_page = this.resultsPerPage;
+
+    return await Promise.all(this.callConcurrent(url, startPage, endPage, params));
+  }
 
   /*
    * Make concurrent calls for a range of pages. The calls will be spaced by `this.secondsBetweenRequests`.
@@ -34,8 +55,6 @@ export class GithubConnector {
     let waitTime = 0;
 
     for (let i = startPage; i <= lastPage; i++) {
-      waitTime += this.secondsBetweenRequests * 1000;
-
       // Collect result promises to wait for all of them
       promises.push(
         new Promise<any>(async (resolve, reject) => {
@@ -46,17 +65,18 @@ export class GithubConnector {
           }, waitTime);
         })
       );
+      waitTime += this.secondsBetweenRequests * 1000;
     }
     return promises;
   }
 
   /*
-   * Make a call to Github, check for errors, wrap results, and account for rate limiting.
+   * Make a call to Github, check for errors, wrap results, and account for retries.
    */
   async getGithubResultsFromUrl(url: string, params: any = null): Promise<GithubResultDTO> {
     const githubResult: GithubResultDTO = new GithubResultDTO();
 
-    const result = await this.rateLimitedCallWithRetries(async () => {
+    const result = await this.callWithRetries(async () => {
       return await this.makeGithubCall(url, params);
     });
 
@@ -110,11 +130,11 @@ export class GithubConnector {
   }
 
   /*
-   * Make an aribrary Github API call, and check response headers to see if the call failed due to a rate limit.
+   * Make an aribrary Github API call, and check response headers to see if the call failed and can be recovered via retry.
    * Retry up to ${retryLimit} times, waiting the given amount of time from the Github API. Resolve the promise
    * when we receive a valid result, otherwise reject with an error if retries is exceeded.
    */
-  async rateLimitedCallWithRetries(toCall: () => Promise<any>, retries: number = 0): Promise<any> {
+  async callWithRetries(toCall: () => Promise<any>, retries: number = 0): Promise<any> {
     let result: any;
 
     return new Promise(async (resolve, reject) => {
@@ -122,6 +142,7 @@ export class GithubConnector {
         reject(this.tooManyRetriesException);
       }
 
+      // Make API Call
       try {
         result = await toCall();
       } catch (e) {
@@ -130,31 +151,40 @@ export class GithubConnector {
 
       if (!result) {
         reject(this.badGitHubResultException);
+
+        // Check for rate limit and perform retries if needed
       } else if (this.githubRateLimitResponses.includes(result.status)) {
         console.warn('Github rate limited response received.');
 
         const retrySeconds: number = parseInt(result.headers['retry-after']);
-
         if (isNaN(retrySeconds)) {
           reject(this.badGitHubResultException);
         }
 
-        const retryAfterMillis: number = Math.max(retrySeconds, this.secondsBetweenRequests) * 1000;
-
-        console.warn(`Retrying after ${retrySeconds} seconds.`);
-
-        setTimeout(async () => {
-          try {
-            result = await this.rateLimitedCallWithRetries(toCall, retries + 1);
-            resolve(result);
-          } catch (e) {
-            reject(e);
-          }
-        }, retryAfterMillis);
+        this.retryCall(toCall, retrySeconds, retries, resolve, reject);
       } else {
+        // If no retries needed, return the result.
         resolve(result);
       }
     });
+  }
+
+  /*
+   * Helper for retrying calls that failed and could be recovered.
+   */
+  retryCall(toCall, retrySeconds, currentRetries, resolve, reject) {
+    const retryAfterMillis: number = Math.max(retrySeconds, this.secondsBetweenRequests) * 1000;
+
+    console.warn(`Retrying after ${retrySeconds} seconds.`);
+
+    setTimeout(async () => {
+      try {
+        const result = await this.callWithRetries(toCall, currentRetries + 1);
+        resolve(result);
+      } catch (e) {
+        reject(e);
+      }
+    }, retryAfterMillis);
   }
 
   /*

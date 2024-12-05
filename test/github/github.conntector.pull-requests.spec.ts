@@ -130,5 +130,53 @@ describe('GithubConnector', () => {
         expect(e).toBeDefined();
       }
     });
+
+    it(`should use the cache if github hasn't changed`, async () => {
+      const mockReturns = exampleFactory.githubPaginatedResultSet(numPages, numResultsPerPage);
+      const cacheSpy = jest.spyOn(githubConnectorPullRequests, 'cacheCheck');
+
+      mockApiCallResponses(mockReturns);
+      await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
+      expect(cacheSpy).toHaveBeenCalledTimes(0);
+
+      mockApiCallResponse(mockReturns[mockReturns.length - 1]);
+      await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
+      expect(cacheSpy).toHaveLastReturnedWith(true);
+    });
+
+    it(`should only request pages from cache cursor if github has changed`, async () => {
+      const mockReturns = exampleFactory.githubPaginatedResultSet(numPages, numResultsPerPage);
+      const pagesSpy = jest.spyOn(githubConnector, 'getGithubResultsFromUrl');
+      const links = [
+        {
+          perPage: numResultsPerPage,
+          page: numPages - 1,
+          pageNumber: numPages,
+          rel: 'prev',
+        },
+        {
+          perPage: numResultsPerPage,
+          page: numPages + 1,
+          pageNumber: numPages,
+          rel: 'next',
+        },
+        {
+          perPage: numResultsPerPage,
+          pageNumber: numPages,
+          page: numPages + 1,
+          rel: 'last',
+        },
+      ];
+
+      mockApiCallResponses(mockReturns);
+      await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
+
+      const nextCallMock = exampleFactory.githubPaginatedResult(HttpStatusCode.Ok, numResultsPerPage, links);
+      mockApiCallResponse(nextCallMock);
+
+      const result = await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
+      expect(result.count).toBe(numResultsPerPage * (numPages + 1));
+      expect(pagesSpy).toHaveBeenCalledTimes(numPages + 2);
+    });
   });
 });
