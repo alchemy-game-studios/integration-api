@@ -21,17 +21,16 @@ export class GithubConnectorPullRequests {
    * Concurrent calls are not recommended by Github, but we can call pages with delay to avoid waiting.
    */
   async getPullRequestCountConcurrent(githubMetadataDto: GithubMetadataDTO): Promise<GithubResultDTO> {
-    const url: string = this.githubConnector.fullPath(githubMetadataDto, this.pullRequestPath);
-    let finalResults: GithubResultDTO;
-    let count = 0;
     const cacheRecord = this.getCacheRecord(githubMetadataDto);
 
-    let startPage: number = 1;
-
+    const url: string = this.githubConnector.fullPath(githubMetadataDto, this.pullRequestPath);
     const baseParams: any = {
       state: this.defaultPullRequestState,
     };
 
+    let startPage: number = 1;
+    let finalResults: GithubResultDTO;
+    let count = 0;
     // Store all page results here.
     let callResults: any[] = [];
 
