@@ -1,5 +1,5 @@
 # API Integration Service
-A NestJS implementation if an API integration service. Provides a pass-through API for retreiving data from external APIs.
+A NestJS implementation of an API integration service. Provides a pass-through API for retreiving data from external APIs.
 
 Currently supports
 - Github pull requests counts from a given repository.
