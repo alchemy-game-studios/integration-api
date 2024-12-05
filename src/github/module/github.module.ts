@@ -1,9 +1,10 @@
-import { Module, MiddlewareConsumer } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { GithubController } from './github.controller';
 import { GithubService } from './github.service';
 import { ConfigModule } from '@nestjs/config';
 import { GithubConnector } from './github.connector';
 import { HttpModule } from '@nestjs/axios';
+import { GithubConnectorPullRequests } from './github.connector.pull-requests';
 
 /*
  * Defines a set of layers and dependencies that can be injected, as well
@@ -18,6 +19,6 @@ import { HttpModule } from '@nestjs/axios';
     HttpModule,
   ],
   controllers: [GithubController],
-  providers: [GithubService, GithubConnector],
+  providers: [GithubService, GithubConnector, GithubConnectorPullRequests],
 })
 export class GithubModule {}

@@ -4,6 +4,19 @@ A NestJS implementation if an API integration service. Provides a pass-through A
 Currently supports
 - Github pull requests counts from a given repository.
 
+`/github/pull-requests/count/concurrent?owner=${owner}&repo=${repo}`
+Returns a count of pull requests for the given repository. Uses a semi-concurrent paginated method to retreive the count.
+
+```json
+{
+  count: 12345
+}
+```
+Query parameters:
+- owner: the owner of the repository | eg. lodash
+- repo: the repository | eg. lodash
+
+
 `/github/pull-requests/count?owner=${owner}&repo=${repo}`
 Returns a count of pull requests for the given repository. Uses an efficient method using pagination metadata to derive the count.
 
@@ -16,21 +29,8 @@ Query parameters:
 - owner: the owner of the repository | eg. lodash
 - repo: the repository | eg. lodash
 
-`/github/pull-requests/count/search?${owner}&${repo}`
+`/github/pull-requests/count/search?owner=${owner}&repo=${repo}`
 Returns a count of pull requests for the given repository. Uses the Github search API to get the count.
-
-```json
-{
-  count: 12345
-}
-```
-Query parameters:
-- owner: the owner of the repository | eg. lodash
-- repo: the repository | eg. lodash
-
-
-`/github/pull-requests/count/concurrent?${owner}&${repo}`
-Returns a count of pull requests for the given repository. Uses a semi-concurrent paginated method to retreive the count.
 
 ```json
 {
@@ -45,10 +45,13 @@ Query parameters:
 ### API Call Examples
 
 ```bash
+curl -X GET "http://localhost:3000/github/pull-requests/count/concurrent?owner=lodash&repo=lodash" \
+     -H "Accept: application/json"
+
 curl -X GET "http://localhost:3000/github/pull-requests/count?owner=lodash&repo=lodash" \
      -H "Accept: application/json"
 
-curl -X GET "http://localhost:3000/github/pull-requests/count/concurrent?owner=lodash&repo=lodash" \
+curl -X GET "http://localhost:3000/github/pull-requests/count/search?owner=lodash&repo=lodash" \
      -H "Accept: application/json"
 
 ```

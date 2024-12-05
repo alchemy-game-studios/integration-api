@@ -1,5 +1,3 @@
-import { link } from 'fs';
-
 /*
  * Factory to create test data examples.
  */
@@ -77,7 +75,6 @@ export class ExampleFactory {
           linkString += ',';
         }
       }
-      console.log(linkString);
 
       example.headers.link = linkString;
     }
@@ -85,7 +82,7 @@ export class ExampleFactory {
     return example;
   }
 
-  githubNonPaginatedResult(status: number, numData: number, headers: any = {}) {
+  githubNonPaginatedResult(status: number, numData: number) {
     return this.githubPaginatedResult(status, numData);
   }
 

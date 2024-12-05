@@ -1,4 +1,4 @@
-import { IsDefined, IsInt, IsNotEmpty, IsString, Min, validate } from 'class-validator';
+import { IsDefined, IsString } from 'class-validator';
 
 export class GithubMetadataDTO {
   @IsDefined()

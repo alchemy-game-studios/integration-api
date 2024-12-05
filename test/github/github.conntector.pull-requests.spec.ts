@@ -5,9 +5,11 @@ import { GithubService } from 'src/github/module/github.service';
 import { GithubConnector } from 'src/github/module/github.connector';
 import { HttpStatusCode } from 'axios';
 import { GithubMetadataDTO } from 'src/github/dto/github-metadata-dto';
+import { GithubConnectorPullRequests } from 'src/github/module/github.connector.pull-requests';
 
 describe('GithubConnector', () => {
   let githubConnector: GithubConnector;
+  let githubConnectorPullRequests: GithubConnectorPullRequests;
   let exampleFactory: ExampleFactory;
   let githubMetadataDto: GithubMetadataDTO;
 
@@ -53,36 +55,37 @@ describe('GithubConnector', () => {
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [GithubController],
-      providers: [GithubService, GithubConnector],
+      providers: [GithubService, GithubConnector, GithubConnectorPullRequests],
     }).compile();
 
     githubConnector = moduleFixture.get(GithubConnector);
+    githubConnectorPullRequests = moduleFixture.get(GithubConnectorPullRequests);
     exampleFactory = new ExampleFactory();
     githubMetadataDto = new GithubMetadataDTO({ owner: 'foo', repo: 'bar' });
   });
 
   describe('pull request counts - derived', () => {
     it('should return a correct response', async () => {
-      let expectedCount = 20;
+      const expectedCount = 20;
 
       const mockReturn = exampleFactory.githubDerivedResult(expectedCount);
 
       mockApiCallResponse(mockReturn);
 
-      const result = await githubConnector.getPullRequestCountFromMetadata(githubMetadataDto);
+      const result = await githubConnectorPullRequests.getPullRequestCountFromMetadata(githubMetadataDto);
       expect(result.count).toBe(expectedCount);
     });
   });
 
   describe('pull request counts - search', () => {
     it('should return a correct response', async () => {
-      let expectedCount = 20;
+      const expectedCount = 20;
 
       const mockReturn = exampleFactory.githubSearchResult(expectedCount);
 
       mockApiCallResponse(mockReturn);
 
-      const result = await githubConnector.getPullRequestCountFromSearch(githubMetadataDto);
+      const result = await githubConnectorPullRequests.getPullRequestCountFromSearch(githubMetadataDto);
       expect(result.count).toBe(expectedCount);
     });
   });
@@ -93,7 +96,7 @@ describe('GithubConnector', () => {
 
       mockApiCallResponse(mockReturn);
 
-      const result = await githubConnector.getPullRequestCountConcurrent(githubMetadataDto);
+      const result = await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
       expect(result.count).toBe(numResults);
     });
 
@@ -102,7 +105,7 @@ describe('GithubConnector', () => {
 
       mockApiCallResponses(mockReturns);
 
-      const result = await githubConnector.getPullRequestCountConcurrent(githubMetadataDto);
+      const result = await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
       expect(result.count).toBe(numResultsPerPage * numPages);
     });
 
@@ -111,7 +114,7 @@ describe('GithubConnector', () => {
 
       mockApiRateLimit(mockReturns, githubConnector.retryLimit);
 
-      const result = await githubConnector.getPullRequestCountConcurrent(githubMetadataDto);
+      const result = await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
       expect(result.count).toBe(numResultsPerPage * numPages);
     });
 
@@ -121,7 +124,7 @@ describe('GithubConnector', () => {
       mockApiRateLimit(mockReturns, githubConnector.retryLimit + 1);
 
       try {
-        const result = await githubConnector.getPullRequestCountConcurrent(githubMetadataDto);
+        await githubConnectorPullRequests.getPullRequestCountConcurrent(githubMetadataDto);
         fail();
       } catch (e: any) {
         expect(e).toBeDefined();
